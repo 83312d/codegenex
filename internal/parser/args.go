@@ -3,7 +3,7 @@ package parser
 import (
 	"strings"
 
-	"github.com/yourusername/codegenex/internal/types"
+	"codegenex/internal/types"
 )
 
 func ParseFields(args []string) []types.Field {

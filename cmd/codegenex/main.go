@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yourusername/codegenex/internal/config"
-	"github.com/yourusername/codegenex/internal/generator"
-	"github.com/yourusername/codegenex/internal/parser"
+	"codegenex/internal/config"
+	"codegenex/internal/generator"
+	"codegenex/internal/parser"
 )
 
 func main() {

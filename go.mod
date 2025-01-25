@@ -1,4 +1,4 @@
-module github.com/yourusername/codegenex
+module codegenex
 
 go 1.23
 

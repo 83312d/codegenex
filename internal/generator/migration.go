@@ -12,10 +12,10 @@ import (
 	"strings"
 	"text/template"
 
+	"codegenex/internal/config"
+	"codegenex/internal/types"
 	"github.com/iancoleman/strcase"
 	"github.com/jinzhu/inflection"
-	"github.com/yourusername/codegenex/internal/config"
-	"github.com/yourusername/codegenex/internal/types"
 )
 
 type MigrationData struct {
