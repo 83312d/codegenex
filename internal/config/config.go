@@ -7,7 +7,8 @@ import (
 )
 
 type Config struct {
-	ModelDir string `json:"model_dir"`
+	ModelDir     string `json:"model_dir"`
+	MigrationDir string `json:"migration_dir"`
 }
 
 var (
@@ -23,6 +24,13 @@ func GetConfig() *Config {
 			defer file.Close()
 			decoder := json.NewDecoder(file)
 			decoder.Decode(config)
+		}
+
+		if config.ModelDir == "" {
+			config.ModelDir = "models"
+		}
+		if config.MigrationDir == "" {
+			config.MigrationDir = "migrations"
 		}
 	})
 	return config

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"codegenex/internal/config"
@@ -10,9 +11,6 @@ import (
 )
 
 func main() {
-	// Загружаем конфигурацию при запуске приложения
-	config.GetConfig()
-
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: codegenex <migration_name> [field:type ...]")
 		os.Exit(1)
@@ -21,11 +19,13 @@ func main() {
 	migrationName := os.Args[1]
 	fields := parser.ParseFields(os.Args[2:])
 
-	migration, err := generator.GenerateMigrationAndModel(migrationName, fields)
+	cfg := config.GetConfig()
+	manager := generator.NewManager(cfg)
+
+	err := manager.GenerateEntity(migrationName, fields)
 	if err != nil {
-		fmt.Printf("Error generating migration and model: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Error generating and saving entity: %v", err)
 	}
 
-	fmt.Println(migration)
+	fmt.Println("Entity generated successfully.")
 }
