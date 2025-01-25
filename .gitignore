@@ -1,0 +1,15 @@
+.vscode
+.idea
+
+bin
+
+go.work
+go.work.sum
+
+*.out
+*.test
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib

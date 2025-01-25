@@ -1,5 +1,13 @@
 package model
 
+{{if .Imports}}
+import (
+    {{range .Imports}}
+    "{{.}}"
+    {{end}}
+)
+{{end}}
+
 type {{.Name}} struct {
     {{- range .Fields}}
     {{.Name}} {{.Type}}
@@ -13,7 +21,6 @@ type {{.Name}} struct {
 }
 
 {{- range .Enums}}
-
 type {{.Name}} string
 
 const (

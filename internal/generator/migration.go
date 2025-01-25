@@ -34,6 +34,7 @@ type FieldData struct {
 	DefaultValue string
 	IsEnum       bool
 	EnumName     string
+	IsUnique     bool
 }
 
 type IndexData struct {
@@ -89,7 +90,7 @@ func GenerateMigrationAndModel(name string, fields []types.Field) (string, error
 }
 
 func GenerateMigration(name string, fields []types.Field) (string, error) {
-	tableName := strcase.ToSnake(strings.TrimPrefix(name, "create_"))
+	tableName := inflection.Plural(strcase.ToSnake(strings.TrimPrefix(name, "create_")))
 
 	migrationData := MigrationData{
 		TableName:  tableName,
@@ -107,6 +108,7 @@ func GenerateMigration(name string, fields []types.Field) (string, error) {
 			IsNullable:   field.IsNullable,
 			DefaultValue: field.DefaultValue,
 			IsEnum:       field.IsEnum,
+			IsUnique:     field.IsUnique,
 		}
 
 		if field.IsEnum {
@@ -128,7 +130,7 @@ func GenerateMigration(name string, fields []types.Field) (string, error) {
 		}
 
 		if field.IsReference {
-			refTable := strings.TrimSuffix(field.Name, "_id")
+			refTable := inflection.Plural(strings.TrimSuffix(field.Name, "_id"))
 			migrationData.References = append(migrationData.References, ReferenceData{
 				Column:    field.Name,
 				RefTable:  refTable,
@@ -138,7 +140,11 @@ func GenerateMigration(name string, fields []types.Field) (string, error) {
 		}
 	}
 
-	tmpl, err := template.ParseFiles("templates/migration.tmpl")
+	funcMap := template.FuncMap{
+		"toSnake": strcase.ToSnake,
+	}
+
+	tmpl, err := template.New("migration.tmpl").Funcs(funcMap).ParseFiles("templates/migration.tmpl")
 	if err != nil {
 		return "", fmt.Errorf("error parsing migration template: %w", err)
 	}
@@ -148,6 +154,7 @@ func GenerateMigration(name string, fields []types.Field) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error executing migration template: %w", err)
 	}
+
 	return buf.String(), nil
 }
 
@@ -159,12 +166,19 @@ func GenerateModel(name string, fields []types.Field) error {
 		Enums:              make([]EnumData, 0),
 		HasManyRelations:   make([]Relation, 0),
 		BelongsToRelations: make([]Relation, 0),
+		Imports:            make([]string, 0),
 	}
+
+	needsTimeImport := false
 
 	for _, field := range fields {
 		modelField := ModelField{
 			Name: strcase.ToCamel(field.Name),
 			Type: getGoType(field),
+		}
+
+		if field.Type == "time" {
+			needsTimeImport = true
 		}
 
 		if field.IsEnum {
@@ -188,6 +202,10 @@ func GenerateModel(name string, fields []types.Field) error {
 		}
 
 		modelData.Fields = append(modelData.Fields, modelField)
+	}
+
+	if needsTimeImport {
+		modelData.Imports = append(modelData.Imports, "time")
 	}
 
 	err := updateReferencedModel(modelName, modelData.BelongsToRelations)

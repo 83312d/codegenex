@@ -36,6 +36,8 @@ func parseField(arg string) types.Field {
 		switch {
 		case option == "i":
 			field.IsIndex = true
+		case option == "unique":
+			field.IsUnique = true
 		case strings.HasPrefix(option, "ref"):
 			field.IsReference = true
 			refParts := strings.Split(option, "=")

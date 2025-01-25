@@ -11,4 +11,5 @@ type Field struct {
 	ReferencedModel string
 	IsEnum          bool
 	EnumValues      []string
+	IsUnique        bool
 }

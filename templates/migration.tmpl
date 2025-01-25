@@ -18,7 +18,7 @@ END$$;
 CREATE TABLE IF NOT EXISTS {{.TableName}} (
   id SERIAL PRIMARY KEY,
   {{- range .Fields}}
-  {{.Name}} {{if .IsEnum}}{{.EnumName}}{{else}}{{.SQLType}}{{end}}{{if .IsNullable}} NULL{{else}} NOT NULL{{end}}{{if .DefaultValue}} DEFAULT {{.DefaultValue}}{{end}},
+  {{.Name}} {{if .IsEnum}}{{.EnumName}}{{else}}{{.SQLType}}{{end}}{{if .IsNullable}} NULL{{else}} NOT NULL{{end}}{{if .IsUnique}} UNIQUE{{end}}{{if .DefaultValue}} DEFAULT {{.DefaultValue}}{{end}},
   {{- end}}
   {{- range .References}}
   FOREIGN KEY ({{.Column}}) REFERENCES {{.RefTable}}({{.RefColumn}}) ON DELETE {{.OnDelete}},
