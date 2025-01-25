@@ -3,9 +3,13 @@ package generator
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 
+	"codegenex/internal/config"
 	"codegenex/internal/types"
 
 	"github.com/iancoleman/strcase"
@@ -46,6 +50,22 @@ type ReferenceData struct {
 type EnumData struct {
 	Name   string
 	Values []string
+}
+
+func GenerateAndSaveMigration(name string, fields []types.Field, cfg *config.Config) error {
+	migrationSQL, err := GenerateMigration(name, fields)
+	if err != nil {
+		return fmt.Errorf("error generating migration: %w", err)
+	}
+
+	fileName := generateMigrationFileName(name)
+	err = saveMigrationToFile(migrationSQL, fileName, cfg)
+	if err != nil {
+		return fmt.Errorf("error saving migration: %w", err)
+	}
+
+	fmt.Printf("Migration file generated: %s\n", fileName)
+	return nil
 }
 
 func GenerateMigration(name string, fields []types.Field) (string, error) {
@@ -165,4 +185,29 @@ func getOnDeleteOption(option string) string {
 	default:
 		return "CASCADE"
 	}
+}
+
+func generateMigrationFileName(name string) string {
+	timestamp := time.Now().Format("20060102150405")
+	return fmt.Sprintf("%s_%s.sql", timestamp, name)
+}
+
+func saveMigrationToFile(migrationSQL, fileName string, cfg *config.Config) error {
+	migrationDir := cfg.MigrationDir
+	if migrationDir == "" {
+		migrationDir = "migrations"
+	}
+
+	err := os.MkdirAll(migrationDir, 0755)
+	if err != nil {
+		return fmt.Errorf("error creating migration directory: %w", err)
+	}
+
+	filePath := filepath.Join(migrationDir, fileName)
+	err = os.WriteFile(filePath, []byte(migrationSQL), 0644)
+	if err != nil {
+		return fmt.Errorf("error writing migration file: %w", err)
+	}
+
+	return nil
 }
