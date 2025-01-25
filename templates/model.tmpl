@@ -1,0 +1,25 @@
+package model
+
+type {{.Name}} struct {
+    {{- range .Fields}}
+    {{.Name}} {{.Type}}
+    {{- end}}
+    {{- range .BelongsToRelations}}
+    {{.FieldName}} *{{.ModelName}}
+    {{- end}}
+    {{- range .HasManyRelations}}
+    {{.FieldName}} []*{{.ModelName}}
+    {{- end}}
+}
+
+{{- range .Enums}}
+
+type {{.Name}} string
+
+const (
+    {{- $enumName := .Name}}
+    {{- range $index, $value := .Values}}
+    {{$enumName}}{{toCamel $value}} {{$enumName}} = "{{$value}}"
+    {{- end}}
+)
+{{- end}}

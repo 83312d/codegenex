@@ -1,0 +1,50 @@
+-- +goose Up
+-- +goose StatementBegin
+
+{{- range .Enums}}
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{{.Name}}') THEN
+        CREATE TYPE {{.Name}} AS ENUM (
+            {{- range $index, $value := .Values}}
+            {{- if $index}},{{end}}
+            '{{$value}}'
+            {{- end}}
+        );
+    END IF;
+END$$;
+{{- end}}
+
+CREATE TABLE IF NOT EXISTS {{.TableName}} (
+  id SERIAL PRIMARY KEY,
+  {{- range .Fields}}
+  {{.Name}} {{if .IsEnum}}{{.EnumName}}{{else}}{{.SQLType}}{{end}}{{if .IsNullable}} NULL{{else}} NOT NULL{{end}}{{if .DefaultValue}} DEFAULT {{.DefaultValue}}{{end}},
+  {{- end}}
+  {{- range .References}}
+  FOREIGN KEY ({{.Column}}) REFERENCES {{.RefTable}}({{.RefColumn}}) ON DELETE {{.OnDelete}},
+  {{- end}}
+  created_at TIMESTAMP(6) NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER update_{{.TableName}}_updated_at
+BEFORE UPDATE ON {{.TableName}}
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+{{- range .Indexes}}
+CREATE INDEX IF NOT EXISTS {{.Name}} ON {{$.TableName}} ({{range $i, $c := .Columns}}{{if $i}}, {{end}}{{$c}}{{end}});
+{{- end}}
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+{{- range .Indexes}}
+DROP INDEX IF EXISTS {{.Name}};
+{{- end}}
+DROP TRIGGER IF EXISTS update_{{.TableName}}_updated_at ON {{.TableName}};
+DROP TABLE IF EXISTS {{.TableName}};
+{{- range .Enums}}
+DROP TYPE IF EXISTS {{.Name}};
+{{- end}}
+-- +goose StatementEnd
