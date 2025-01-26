@@ -102,6 +102,15 @@ func prepareModelData(modelName string, fields []types.Field) ModelData {
 	}
 
 	needsTimeImport := false
+	hasCreatedAt := false
+	hasUpdatedAt := false
+
+	if !hasFieldWithName(fields, "id") {
+		modelData.Fields = append(modelData.Fields, ModelField{
+			Name: "ID",
+			Type: "int64",
+		})
+	}
 
 	for _, field := range fields {
 		modelField := ModelField{
@@ -125,15 +134,35 @@ func prepareModelData(modelName string, fields []types.Field) ModelData {
 		modelData.Fields = append(modelData.Fields, modelField)
 
 		if field.IsReference {
-			referencedModel := field.ReferencedModel
-			if referencedModel == "" {
-				referencedModel = inflection.Singular(strcase.ToCamel(strings.TrimSuffix(field.Name, "_id")))
-			}
-			modelData.BelongsToRelations = append(modelData.BelongsToRelations, Relation{
+			referencedModel := inflection.Singular(strcase.ToCamel(strings.TrimSuffix(field.Name, "_id")))
+			relationName := inflection.Plural(referencedModel)
+			modelData.HasManyRelations = append(modelData.HasManyRelations, Relation{
 				ModelName: referencedModel,
-				FieldName: strcase.ToCamel(strings.TrimSuffix(field.Name, "_id")),
+				FieldName: relationName,
 			})
 		}
+
+		switch field.Name {
+		case "created_at":
+			hasCreatedAt = true
+		case "updated_at":
+			hasUpdatedAt = true
+		}
+	}
+
+	if !hasCreatedAt {
+		modelData.Fields = append(modelData.Fields, ModelField{
+			Name: "CreatedAt",
+			Type: "time.Time",
+		})
+		needsTimeImport = true
+	}
+	if !hasUpdatedAt {
+		modelData.Fields = append(modelData.Fields, ModelField{
+			Name: "UpdatedAt",
+			Type: "time.Time",
+		})
+		needsTimeImport = true
 	}
 
 	if needsTimeImport {
@@ -141,6 +170,15 @@ func prepareModelData(modelName string, fields []types.Field) ModelData {
 	}
 
 	return modelData
+}
+
+func hasFieldWithName(fields []types.Field, name string) bool {
+	for _, field := range fields {
+		if field.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func addFieldsToModel(modelName string, newFields []types.Field, cfg *config.Config) error {
@@ -152,7 +190,6 @@ func addFieldsToModel(modelName string, newFields []types.Field, cfg *config.Con
 		return fmt.Errorf("error parsing file %s: %w", filePath, err)
 	}
 
-	// find struct
 	var structDecl *ast.TypeSpec
 	ast.Inspect(node, func(n ast.Node) bool {
 		if ts, ok := n.(*ast.TypeSpec); ok && ts.Name.Name == modelName {
@@ -166,18 +203,47 @@ func addFieldsToModel(modelName string, newFields []types.Field, cfg *config.Con
 		return fmt.Errorf("struct %s not found in file %s", modelName, filePath)
 	}
 
-	// add fields to struct
 	structType, ok := structDecl.Type.(*ast.StructType)
 	if !ok {
 		return fmt.Errorf("%s is not a struct type", modelName)
 	}
 
-	for _, field := range newFields {
-		newField := &ast.Field{
-			Names: []*ast.Ident{ast.NewIdent(strcase.ToCamel(field.Name))},
-			Type:  ast.NewIdent(getGoType(field)),
+	existingFields := make(map[string]bool)
+	for _, field := range structType.Fields.List {
+		if len(field.Names) > 0 {
+			existingFields[field.Names[0].Name] = true
 		}
-		structType.Fields.List = append(structType.Fields.List, newField)
+	}
+
+	referencesToUpdate := make([]Relation, 0)
+
+	for _, field := range newFields {
+		fieldName := strcase.ToCamel(field.Name)
+		if !existingFields[fieldName] {
+			newField := &ast.Field{
+				Names: []*ast.Ident{ast.NewIdent(fieldName)},
+				Type:  ast.NewIdent(getGoType(field)),
+			}
+			structType.Fields.List = append(structType.Fields.List, newField)
+		}
+
+		if field.IsReference {
+			referencedModel := inflection.Singular(strcase.ToCamel(strings.TrimSuffix(field.Name, "_id")))
+			relationName := inflection.Plural(referencedModel)
+			if !existingFields[relationName] {
+				relationField := &ast.Field{
+					Names: []*ast.Ident{ast.NewIdent(relationName)},
+					Type: &ast.ArrayType{
+						Elt: &ast.StarExpr{X: ast.NewIdent(referencedModel)},
+					},
+				}
+				structType.Fields.List = append(structType.Fields.List, relationField)
+			}
+			referencesToUpdate = append(referencesToUpdate, Relation{
+				ModelName: referencedModel,
+				FieldName: relationName,
+			})
+		}
 	}
 
 	var buf bytes.Buffer
@@ -191,10 +257,11 @@ func addFieldsToModel(modelName string, newFields []types.Field, cfg *config.Con
 		return err
 	}
 
-	modelData := prepareModelData(modelName, newFields)
-	err = updateReferencedModel(modelName, modelData.BelongsToRelations, cfg)
-	if err != nil {
-		return fmt.Errorf("error updating referenced models: %w", err)
+	for _, ref := range referencesToUpdate {
+		err = updateReferencedModel(modelName, []Relation{ref}, cfg)
+		if err != nil {
+			return fmt.Errorf("error updating referenced model %s: %w", ref.ModelName, err)
+		}
 	}
 
 	return nil
@@ -289,21 +356,8 @@ func saveModelToFile(modelName string, content []byte, cfg *config.Config) error
 }
 
 func updateReferencedModel(currentModel string, relations []Relation, cfg *config.Config) error {
-	modelDir := cfg.ModelDir
-	if modelDir == "" {
-		var err error
-		modelDir, err = os.Getwd()
-		if err != nil {
-			return fmt.Errorf("error getting current directory: %w", err)
-		}
-	}
-
 	for _, relation := range relations {
-		filePath := filepath.Join(modelDir, strings.ToLower(relation.ModelName)+".go")
-
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			continue
-		}
+		filePath := getModelFilePath(relation.ModelName, cfg)
 
 		fset := token.NewFileSet()
 		node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
@@ -324,29 +378,38 @@ func updateReferencedModel(currentModel string, relations []Relation, cfg *confi
 			return fmt.Errorf("struct %s not found in file %s", relation.ModelName, filePath)
 		}
 
-		newField := &ast.Field{
-			Names: []*ast.Ident{ast.NewIdent(inflection.Plural(currentModel))},
-			Type: &ast.ArrayType{
-				Elt: &ast.StarExpr{X: ast.NewIdent(currentModel)},
-			},
-		}
-
 		structType, ok := structDecl.Type.(*ast.StructType)
 		if !ok {
 			return fmt.Errorf("%s is not a struct type", relation.ModelName)
 		}
 
-		structType.Fields.List = append(structType.Fields.List, newField)
-
-		var buf bytes.Buffer
-		err = format.Node(&buf, fset, node)
-		if err != nil {
-			return fmt.Errorf("error formatting updated file: %w", err)
+		fieldExists := false
+		for _, field := range structType.Fields.List {
+			if len(field.Names) > 0 && field.Names[0].Name == inflection.Plural(currentModel) {
+				fieldExists = true
+				break
+			}
 		}
 
-		err = os.WriteFile(filePath, buf.Bytes(), 0644)
-		if err != nil {
-			return fmt.Errorf("error writing updated file: %w", err)
+		if !fieldExists {
+			newField := &ast.Field{
+				Names: []*ast.Ident{ast.NewIdent(inflection.Plural(currentModel))},
+				Type: &ast.ArrayType{
+					Elt: &ast.StarExpr{X: ast.NewIdent(currentModel)},
+				},
+			}
+			structType.Fields.List = append(structType.Fields.List, newField)
+
+			var buf bytes.Buffer
+			err = format.Node(&buf, fset, node)
+			if err != nil {
+				return fmt.Errorf("error formatting updated file: %w", err)
+			}
+
+			err = saveModelToFile(relation.ModelName, buf.Bytes(), cfg)
+			if err != nil {
+				return fmt.Errorf("error saving updated file: %w", err)
+			}
 		}
 	}
 

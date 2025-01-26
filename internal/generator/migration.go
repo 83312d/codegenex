@@ -92,7 +92,6 @@ func GenerateMigration(entityName string, fields []types.Field, action types.Act
 			DefaultValue: field.DefaultValue,
 			IsEnum:       field.IsEnum,
 			IsUnique:     field.IsUnique,
-			IsReference:  field.IsReference,
 		}
 
 		if field.IsEnum {
@@ -102,18 +101,6 @@ func GenerateMigration(entityName string, fields []types.Field, action types.Act
 				Name:   enumName,
 				Values: field.EnumValues,
 			})
-		}
-
-		if field.IsReference {
-			refParts := strings.Split(field.RefOptions, ".")
-			if len(refParts) == 2 {
-				fieldData.RefTable = refParts[0]
-				fieldData.RefColumn = refParts[1]
-			} else {
-				fieldData.RefTable = inflection.Plural(strings.TrimSuffix(field.Name, "_id"))
-				fieldData.RefColumn = "id"
-			}
-			fieldData.OnDelete = getOnDeleteOption(field.RefOptions)
 		}
 
 		migrationData.Fields = append(migrationData.Fields, fieldData)
@@ -126,11 +113,50 @@ func GenerateMigration(entityName string, fields []types.Field, action types.Act
 		}
 
 		if field.IsReference {
+			refTable := inflection.Plural(strings.TrimSuffix(field.Name, "_id"))
 			migrationData.References = append(migrationData.References, ReferenceData{
 				Column:    field.Name,
-				RefTable:  fieldData.RefTable,
-				RefColumn: fieldData.RefColumn,
-				OnDelete:  fieldData.OnDelete,
+				RefTable:  refTable,
+				RefColumn: "id",
+				OnDelete:  getOnDeleteOption(field.RefOptions),
+			})
+		}
+	}
+
+	if action == types.CreateAction {
+		hasID := false
+		hasCreatedAt := false
+		hasUpdatedAt := false
+
+		for _, field := range migrationData.Fields {
+			switch field.Name {
+			case "id":
+				hasID = true
+			case "created_at":
+				hasCreatedAt = true
+			case "updated_at":
+				hasUpdatedAt = true
+			}
+		}
+
+		if !hasID {
+			migrationData.Fields = append([]FieldData{{
+				Name:    "id",
+				SQLType: "SERIAL PRIMARY KEY",
+			}}, migrationData.Fields...)
+		}
+		if !hasCreatedAt {
+			migrationData.Fields = append(migrationData.Fields, FieldData{
+				Name:         "created_at",
+				SQLType:      "TIMESTAMP",
+				DefaultValue: "CURRENT_TIMESTAMP",
+			})
+		}
+		if !hasUpdatedAt {
+			migrationData.Fields = append(migrationData.Fields, FieldData{
+				Name:         "updated_at",
+				SQLType:      "TIMESTAMP",
+				DefaultValue: "CURRENT_TIMESTAMP",
 			})
 		}
 	}

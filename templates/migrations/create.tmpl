@@ -16,12 +16,9 @@ END$$;
 {{- end}}
 
 CREATE TABLE IF NOT EXISTS {{.TableName}} (
-    id SERIAL PRIMARY KEY,
     {{- range .Fields}}
-    {{.Name}} {{if .IsEnum}}{{.EnumName}}{{else}}{{.SQLType}}{{end}}{{if .IsNullable}} NULL{{else}} NOT NULL{{end}}{{if .IsUnique}} UNIQUE{{end}}{{if .DefaultValue}} DEFAULT {{.DefaultValue}}{{end}},
+    {{.Name}} {{if .IsEnum}}{{.EnumName}}{{else}}{{.SQLType}}{{end}}{{if .IsNullable}} NULL{{else}} NOT NULL{{end}}{{if .IsUnique}} UNIQUE{{end}}{{if .DefaultValue}} DEFAULT {{.DefaultValue}}{{end}}{{if not (eq .Name "id")}},{{end}}
     {{- end}}
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 {{- range .Indexes}}
@@ -51,7 +48,7 @@ EXECUTE FUNCTION update_updated_at_column();
 -- +goose StatementEnd
 
 -- +goose Down
--- +goose StatementEnd
+-- +goose StatementBegin
 DROP TRIGGER IF EXISTS update_{{.TableName}}_updated_at ON {{.TableName}};
 DROP FUNCTION IF EXISTS update_updated_at_column();
 {{- range .References}}

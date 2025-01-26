@@ -19,8 +19,8 @@ type {{.Name}} struct {
 }
 
 {{- range .Enums}}
-type {{.Name}} string
 
+type {{.Name}} string
 const (
     {{- $enumName := .Name}}
     {{- range $index, $value := .Values}}
