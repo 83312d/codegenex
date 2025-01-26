@@ -40,8 +40,58 @@ type Relation struct {
 	FieldName string
 }
 
-func GenerateModel(name string, fields []types.Field) error {
-	modelName := inflection.Singular(strcase.ToCamel(strings.TrimPrefix(name, "create_")))
+func GenerateModel(entityName string, fields []types.Field, action types.Action) error {
+	cfg := config.GetConfig()
+	modelName := inflection.Singular(strcase.ToCamel(entityName))
+
+	switch action {
+	case types.CreateAction:
+		return createModel(modelName, fields, cfg)
+	case types.AddFieldsAction:
+		return addFieldsToModel(modelName, fields, cfg)
+	case types.RemoveFieldsAction:
+		return removeFieldsFromModel(modelName, fields, cfg)
+	case types.DropAction:
+		return removeModel(modelName, cfg)
+	default:
+		return fmt.Errorf("unknown action: %s", action)
+	}
+}
+
+func createModel(modelName string, fields []types.Field, cfg *config.Config) error {
+	modelData := prepareModelData(modelName, fields)
+
+	funcMap := template.FuncMap{
+		"toCamel":   strcase.ToCamel,
+		"toSnake":   strcase.ToSnake,
+		"pluralize": inflection.Plural,
+	}
+
+	tmpl, err := template.New("model.tmpl").Funcs(funcMap).ParseFiles("templates/models/model.tmpl")
+	if err != nil {
+		return fmt.Errorf("error parsing model template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, modelData)
+	if err != nil {
+		return fmt.Errorf("error executing model template: %w", err)
+	}
+
+	err = saveModelToFile(modelName, buf.Bytes(), cfg)
+	if err != nil {
+		return err
+	}
+
+	err = updateReferencedModel(modelName, modelData.BelongsToRelations, cfg)
+	if err != nil {
+		return fmt.Errorf("error updating referenced models: %w", err)
+	}
+
+	return nil
+}
+
+func prepareModelData(modelName string, fields []types.Field) ModelData {
 	modelData := ModelData{
 		Name:               modelName,
 		Fields:             make([]ModelField, 0),
@@ -90,54 +140,155 @@ func GenerateModel(name string, fields []types.Field) error {
 		modelData.Imports = append(modelData.Imports, "time")
 	}
 
-	err := updateReferencedModel(modelName, modelData.BelongsToRelations)
+	return modelData
+}
+
+func addFieldsToModel(modelName string, newFields []types.Field, cfg *config.Config) error {
+	filePath := getModelFilePath(modelName, cfg)
+
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
 	if err != nil {
-		return fmt.Errorf("error updating referenced model: %w", err)
+		return fmt.Errorf("error parsing file %s: %w", filePath, err)
 	}
 
-	funcMap := template.FuncMap{
-		"toCamel": strcase.ToCamel,
+	// find struct
+	var structDecl *ast.TypeSpec
+	ast.Inspect(node, func(n ast.Node) bool {
+		if ts, ok := n.(*ast.TypeSpec); ok && ts.Name.Name == modelName {
+			structDecl = ts
+			return false
+		}
+		return true
+	})
+
+	if structDecl == nil {
+		return fmt.Errorf("struct %s not found in file %s", modelName, filePath)
 	}
 
-	tmpl, err := template.New("model.tmpl").Funcs(funcMap).ParseFiles("templates/model.tmpl")
-	if err != nil {
-		return fmt.Errorf("error parsing model template: %w", err)
+	// add fields to struct
+	structType, ok := structDecl.Type.(*ast.StructType)
+	if !ok {
+		return fmt.Errorf("%s is not a struct type", modelName)
+	}
+
+	for _, field := range newFields {
+		newField := &ast.Field{
+			Names: []*ast.Ident{ast.NewIdent(strcase.ToCamel(field.Name))},
+			Type:  ast.NewIdent(getGoType(field)),
+		}
+		structType.Fields.List = append(structType.Fields.List, newField)
 	}
 
 	var buf bytes.Buffer
-	err = tmpl.Execute(&buf, modelData)
+	err = format.Node(&buf, fset, node)
 	if err != nil {
-		return fmt.Errorf("error executing model template: %w", err)
+		return fmt.Errorf("error formatting updated file: %w", err)
 	}
 
-	cfg := config.GetConfig()
-	modelDir := cfg.ModelDir
-	if modelDir == "" {
-		modelDir, err = os.Getwd()
-		if err != nil {
-			return fmt.Errorf("error getting current directory: %w", err)
+	err = saveModelToFile(modelName, buf.Bytes(), cfg)
+	if err != nil {
+		return err
+	}
+
+	modelData := prepareModelData(modelName, newFields)
+	err = updateReferencedModel(modelName, modelData.BelongsToRelations, cfg)
+	if err != nil {
+		return fmt.Errorf("error updating referenced models: %w", err)
+	}
+
+	return nil
+}
+
+func removeFieldsFromModel(modelName string, fieldsToRemove []types.Field, cfg *config.Config) error {
+	filePath := getModelFilePath(modelName, cfg)
+
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("error parsing file %s: %w", filePath, err)
+	}
+
+	// find struct def
+	var structDecl *ast.TypeSpec
+	ast.Inspect(node, func(n ast.Node) bool {
+		if ts, ok := n.(*ast.TypeSpec); ok && ts.Name.Name == modelName {
+			structDecl = ts
+			return false
+		}
+		return true
+	})
+
+	if structDecl == nil {
+		return fmt.Errorf("struct %s not found in file %s", modelName, filePath)
+	}
+
+	// rem fields from struct
+	structType, ok := structDecl.Type.(*ast.StructType)
+	if !ok {
+		return fmt.Errorf("%s is not a struct type", modelName)
+	}
+
+	fieldsToRemoveMap := make(map[string]bool)
+	for _, field := range fieldsToRemove {
+		fieldsToRemoveMap[strcase.ToCamel(field.Name)] = true
+	}
+
+	newFields := make([]*ast.Field, 0)
+	for _, field := range structType.Fields.List {
+		if len(field.Names) > 0 && !fieldsToRemoveMap[field.Names[0].Name] {
+			newFields = append(newFields, field)
 		}
 	}
+	structType.Fields.List = newFields
 
-	err = os.MkdirAll(modelDir, 0755)
+	var buf bytes.Buffer
+	err = format.Node(&buf, fset, node)
+	if err != nil {
+		return fmt.Errorf("error formatting updated file: %w", err)
+	}
+
+	return saveModelToFile(modelName, buf.Bytes(), cfg)
+}
+
+func removeModel(modelName string, cfg *config.Config) error {
+	filePath := getModelFilePath(modelName, cfg)
+	err := os.Remove(filePath)
+	if err != nil {
+		return fmt.Errorf("error removing model file %s: %w", filePath, err)
+	}
+	fmt.Printf("Model file removed: %s\n", filePath)
+	return nil
+}
+
+func getModelFilePath(modelName string, cfg *config.Config) string {
+	modelDir := cfg.ModelDir
+	if modelDir == "" {
+		modelDir = "models"
+	}
+	fileName := fmt.Sprintf("%s.go", strcase.ToSnake(modelName))
+	return filepath.Join(modelDir, fileName)
+}
+
+func saveModelToFile(modelName string, content []byte, cfg *config.Config) error {
+	filePath := getModelFilePath(modelName, cfg)
+
+	modelDir := filepath.Dir(filePath)
+	err := os.MkdirAll(modelDir, 0755)
 	if err != nil {
 		return fmt.Errorf("error creating model directory: %w", err)
 	}
 
-	fileName := fmt.Sprintf("%s.go", strings.ToLower(modelName))
-	filePath := filepath.Join(modelDir, fileName)
-
-	err = os.WriteFile(filePath, buf.Bytes(), 0644)
+	err = os.WriteFile(filePath, content, 0644)
 	if err != nil {
 		return fmt.Errorf("error writing model file: %w", err)
 	}
 
-	fmt.Printf("Model file generated: %s\n", filePath)
+	fmt.Printf("Model file updated: %s\n", filePath)
 	return nil
 }
 
-func updateReferencedModel(currentModel string, relations []Relation) error {
-	cfg := config.GetConfig()
+func updateReferencedModel(currentModel string, relations []Relation, cfg *config.Config) error {
 	modelDir := cfg.ModelDir
 	if modelDir == "" {
 		var err error

@@ -1,0 +1,55 @@
+package model
+
+import (
+    {{- range .Imports}}
+    "{{.}}"
+    {{- end}}
+)
+
+// {{.Name}} represents a {{.Name}} entity in the database
+type {{.Name}} struct {
+    {{- range .Fields}}
+    {{.Name}} {{.Type}}
+    {{- end}}
+    {{- range .BelongsToRelations}}
+    // {{.FieldName}} is the associated {{.ModelName}}
+    {{.FieldName}} *{{.ModelName}}
+    {{- end}}
+    {{- range .HasManyRelations}}
+    // {{.FieldName}} are the associated {{.ModelName}}s
+    {{.FieldName}} []*{{.ModelName}}
+    {{- end}}
+}
+
+{{- range .Enums}}
+// {{.Name}} represents the possible values for {{$.Name}}'s {{.Name | toSnake}}
+type {{.Name}} string
+
+const (
+    {{- $enumName := .Name}}
+    {{- range $index, $value := .Values}}
+    {{$enumName}}{{toCamel $value}} {{$enumName}} = "{{$value}}"
+    {{- end}}
+)
+
+// Valid{{.Name}} checks if the value is a valid {{.Name}}
+func Valid{{.Name}}(v string) bool {
+    switch {{.Name}}(v) {
+    {{- range .Values}}
+    case {{$enumName}}{{toCamel .}}:
+        return true
+    {{- end}}
+    }
+    return false
+}
+
+// String returns the string representation of {{.Name}}
+func (e {{.Name}}) String() string {
+    return string(e)
+}
+{{- end}}
+
+// TableName returns the table name for {{.Name}}
+func ({{.Name}}) TableName() string {
+    return "{{.Name | toSnake | pluralize}}"
+}

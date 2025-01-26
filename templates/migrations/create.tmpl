@@ -1,0 +1,67 @@
+-- +goose Up
+-- +goose StatementBegin
+
+{{- range .Enums}}
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{{.Name}}') THEN
+        CREATE TYPE {{.Name}} AS ENUM (
+            {{- range $index, $value := .Values}}
+            {{- if $index}},{{end}}
+            '{{$value}}'
+            {{- end}}
+        );
+    END IF;
+END$$;
+{{- end}}
+
+CREATE TABLE IF NOT EXISTS {{.TableName}} (
+    id SERIAL PRIMARY KEY,
+    {{- range .Fields}}
+    {{.Name}} {{if .IsEnum}}{{.EnumName}}{{else}}{{.SQLType}}{{end}}{{if .IsNullable}} NULL{{else}} NOT NULL{{end}}{{if .IsUnique}} UNIQUE{{end}}{{if .DefaultValue}} DEFAULT {{.DefaultValue}}{{end}},
+    {{- end}}
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+{{- range .Indexes}}
+CREATE INDEX IF NOT EXISTS {{.Name}} ON {{$.TableName}} ({{range $i, $c := .Columns}}{{if $i}}, {{end}}{{$c}}{{end}});
+{{- end}}
+
+{{- range .References}}
+ALTER TABLE {{$.TableName}}
+ADD CONSTRAINT fk_{{$.TableName}}_{{.Column}}
+FOREIGN KEY ({{.Column}}) REFERENCES {{.RefTable}}({{.RefColumn}})
+ON DELETE {{.OnDelete}};
+{{- end}}
+
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_{{.TableName}}_updated_at
+BEFORE UPDATE ON {{.TableName}}
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementEnd
+DROP TRIGGER IF EXISTS update_{{.TableName}}_updated_at ON {{.TableName}};
+DROP FUNCTION IF EXISTS update_updated_at_column();
+{{- range .References}}
+ALTER TABLE {{$.TableName}} DROP CONSTRAINT IF EXISTS fk_{{$.TableName}}_{{.Column}};
+{{- end}}
+{{- range .Indexes}}
+DROP INDEX IF EXISTS {{.Name}};
+{{- end}}
+DROP TABLE IF EXISTS {{.TableName}};
+{{- range .Enums}}
+DROP TYPE IF EXISTS {{.Name}};
+{{- end}}
+-- +goose StatementEnd
