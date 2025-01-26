@@ -1,12 +1,10 @@
 package model
 
-{{if .Imports}}
 import (
-    {{range .Imports}}
+    {{- range .Imports}}
     "{{.}}"
-    {{end}}
+    {{- end}}
 )
-{{end}}
 
 type {{.Name}} struct {
     {{- range .Fields}}
@@ -21,12 +19,30 @@ type {{.Name}} struct {
 }
 
 {{- range .Enums}}
-type {{.Name}} string
 
+type {{.Name}} string
 const (
     {{- $enumName := .Name}}
     {{- range $index, $value := .Values}}
     {{$enumName}}{{toCamel $value}} {{$enumName}} = "{{$value}}"
     {{- end}}
 )
+
+func Valid{{.Name}}(v string) bool {
+    switch {{.Name}}(v) {
+    {{- range .Values}}
+    case {{$enumName}}{{toCamel .}}:
+        return true
+    {{- end}}
+    }
+    return false
+}
+
+func (e {{.Name}}) String() string {
+    return string(e)
+}
 {{- end}}
+
+func ({{.Name}}) TableName() string {
+    return "{{.Name | toSnake | pluralize}}"
+}

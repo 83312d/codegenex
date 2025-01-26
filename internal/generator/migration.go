@@ -33,6 +33,10 @@ type FieldData struct {
 	IsEnum       bool
 	EnumName     string
 	IsUnique     bool
+	IsReference  bool
+	RefTable     string
+	RefColumn    string
+	OnDelete     string
 }
 
 type IndexData struct {
@@ -52,13 +56,13 @@ type EnumData struct {
 	Values []string
 }
 
-func GenerateAndSaveMigration(name string, fields []types.Field, cfg *config.Config) error {
-	migrationSQL, err := GenerateMigration(name, fields)
+func GenerateAndSaveMigration(entityName string, fields []types.Field, action types.Action, cfg *config.Config) error {
+	migrationSQL, err := GenerateMigration(entityName, fields, action)
 	if err != nil {
 		return fmt.Errorf("error generating migration: %w", err)
 	}
 
-	fileName := generateMigrationFileName(name)
+	fileName := generateMigrationFileName(entityName, action)
 	err = saveMigrationToFile(migrationSQL, fileName, cfg)
 	if err != nil {
 		return fmt.Errorf("error saving migration: %w", err)
@@ -68,8 +72,8 @@ func GenerateAndSaveMigration(name string, fields []types.Field, cfg *config.Con
 	return nil
 }
 
-func GenerateMigration(name string, fields []types.Field) (string, error) {
-	tableName := inflection.Plural(strcase.ToSnake(strings.TrimPrefix(name, "create_")))
+func GenerateMigration(entityName string, fields []types.Field, action types.Action) (string, error) {
+	tableName := inflection.Plural(strcase.ToSnake(entityName))
 
 	migrationData := MigrationData{
 		TableName:  tableName,
@@ -119,13 +123,57 @@ func GenerateMigration(name string, fields []types.Field) (string, error) {
 		}
 	}
 
+	if action == types.CreateAction {
+		hasID := false
+		hasCreatedAt := false
+		hasUpdatedAt := false
+
+		for _, field := range migrationData.Fields {
+			switch field.Name {
+			case "id":
+				hasID = true
+			case "created_at":
+				hasCreatedAt = true
+			case "updated_at":
+				hasUpdatedAt = true
+			}
+		}
+
+		if !hasID {
+			migrationData.Fields = append([]FieldData{{
+				Name:    "id",
+				SQLType: "SERIAL PRIMARY KEY",
+			}}, migrationData.Fields...)
+		}
+		if !hasCreatedAt {
+			migrationData.Fields = append(migrationData.Fields, FieldData{
+				Name:         "created_at",
+				SQLType:      "TIMESTAMP",
+				DefaultValue: "CURRENT_TIMESTAMP",
+			})
+		}
+		if !hasUpdatedAt {
+			migrationData.Fields = append(migrationData.Fields, FieldData{
+				Name:         "updated_at",
+				SQLType:      "TIMESTAMP",
+				DefaultValue: "CURRENT_TIMESTAMP",
+			})
+		}
+	}
+
+	templateName := filepath.Join("templates", "migrations", action.String()+".tmpl")
+
+	if _, err := os.Stat(templateName); os.IsNotExist(err) {
+		return "", fmt.Errorf("template for action %s does not exist: %w", action, err)
+	}
+
 	funcMap := template.FuncMap{
 		"toSnake": strcase.ToSnake,
 	}
 
-	tmpl, err := template.New("migration.tmpl").Funcs(funcMap).ParseFiles("templates/migration.tmpl")
+	tmpl, err := template.New(filepath.Base(templateName)).Funcs(funcMap).ParseFiles(templateName)
 	if err != nil {
-		return "", fmt.Errorf("error parsing migration template: %w", err)
+		return "", fmt.Errorf("error parsing template %s: %w", templateName, err)
 	}
 
 	var buf bytes.Buffer
@@ -187,9 +235,21 @@ func getOnDeleteOption(option string) string {
 	}
 }
 
-func generateMigrationFileName(name string) string {
+func generateMigrationFileName(entityName string, action types.Action) string {
 	timestamp := time.Now().Format("20060102150405")
-	return fmt.Sprintf("%s_%s.sql", timestamp, name)
+	var actionStr string
+	switch action {
+	case types.CreateAction:
+		actionStr = "create"
+	case types.AddFieldsAction:
+		actionStr = "add_fields_to"
+	case types.RemoveFieldsAction:
+		actionStr = "remove_fields_from"
+	case types.DropAction:
+		actionStr = "drop"
+	}
+
+	return fmt.Sprintf("%s_%s_%s.sql", timestamp, actionStr, entityName)
 }
 
 func saveMigrationToFile(migrationSQL, fileName string, cfg *config.Config) error {

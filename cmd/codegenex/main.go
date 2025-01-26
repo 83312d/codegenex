@@ -11,21 +11,22 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: codegenex <migration_name> [field:type ...]")
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: codegenex <entity_name> <action> [field:type:options ...]")
 		os.Exit(1)
 	}
 
-	migrationName := os.Args[1]
-	fields := parser.ParseFields(os.Args[2:])
+	entityName := os.Args[1]
+	action := parser.ParseAction(os.Args[2])
+	fields := parser.ParseFields(os.Args[3:])
 
 	cfg := config.GetConfig()
 	manager := generator.NewManager(cfg)
 
-	err := manager.GenerateEntity(migrationName, fields)
+	err := manager.GenerateEntity(entityName, action, fields)
 	if err != nil {
 		log.Fatalf("Error generating and saving entity: %v", err)
 	}
 
-	fmt.Println("Entity generated successfully.")
+	fmt.Println("Entity updated successfully.")
 }

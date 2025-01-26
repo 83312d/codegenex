@@ -27,10 +27,10 @@ func GetConfig() *Config {
 		}
 
 		if config.ModelDir == "" {
-			config.ModelDir = "models"
+			config.ModelDir = "_gen/models"
 		}
 		if config.MigrationDir == "" {
-			config.MigrationDir = "migrations"
+			config.MigrationDir = "_gen/migrations"
 		}
 	})
 	return config

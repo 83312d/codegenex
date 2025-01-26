@@ -1,10 +1,24 @@
 package parser
 
 import (
-	"strings"
-
 	"codegenex/internal/types"
+	"strings"
 )
+
+func ParseAction(action string) types.Action {
+	switch action {
+	case "create":
+		return types.CreateAction
+	case "add_fields":
+		return types.AddFieldsAction
+	case "remove_fields":
+		return types.RemoveFieldsAction
+	case "drop":
+		return types.DropAction
+	default:
+		return types.UnknownAction
+	}
+}
 
 func ParseFields(args []string) []types.Field {
 	fields := make([]types.Field, 0, len(args))

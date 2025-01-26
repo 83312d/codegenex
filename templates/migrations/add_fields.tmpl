@@ -1,0 +1,53 @@
+-- +goose Up
+-- +goose StatementBegin
+
+{{- range .Enums}}
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{{.Name}}') THEN
+        CREATE TYPE {{.Name}} AS ENUM (
+            {{- range $index, $value := .Values}}
+            {{- if $index}},{{end}}
+            '{{$value}}'
+            {{- end}}
+        );
+    END IF;
+END$$;
+{{- end}}
+
+{{- range .Fields}}
+ALTER TABLE {{$.TableName}}
+ADD COLUMN IF NOT EXISTS {{.Name}} {{if .IsEnum}}{{.EnumName}}{{else}}{{.SQLType}}{{end}}{{if .IsNullable}} NULL{{else}} NOT NULL{{end}}{{if .IsUnique}} UNIQUE{{end}}{{if .DefaultValue}} DEFAULT {{.DefaultValue}}{{end}};
+{{- end}}
+
+{{- range .Indexes}}
+CREATE INDEX IF NOT EXISTS {{.Name}} ON {{$.TableName}} ({{range $i, $c := .Columns}}{{if $i}}, {{end}}{{$c}}{{end}});
+{{- end}}
+
+{{- range .References}}
+ALTER TABLE {{$.TableName}}
+ADD CONSTRAINT fk_{{$.TableName}}_{{.Column}}
+FOREIGN KEY ({{.Column}}) REFERENCES {{.RefTable}}({{.RefColumn}})
+ON DELETE {{.OnDelete}};
+{{- end}}
+
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+{{- range .References}}
+ALTER TABLE {{$.TableName}} DROP CONSTRAINT IF EXISTS fk_{{$.TableName}}_{{.Column}};
+{{- end}}
+
+{{- range .Indexes}}
+DROP INDEX IF EXISTS {{.Name}};
+{{- end}}
+
+{{- range .Fields}}
+ALTER TABLE {{$.TableName}} DROP COLUMN IF EXISTS {{.Name}};
+{{- end}}
+
+{{- range .Enums}}
+DROP TYPE IF EXISTS {{.Name}};
+{{- end}}
+-- +goose StatementEnd
