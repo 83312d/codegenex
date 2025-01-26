@@ -2,6 +2,7 @@
 .idea
 
 bin
+_gen
 
 go.work
 go.work.sum

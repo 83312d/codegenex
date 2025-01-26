@@ -8,19 +8,29 @@
 
 ## Синтаксис команды
 
-`./codegenex <migration_name> [field:type:options ...]`
+`./codegenex <entity_name> <action> [field:type:options ...]`
 
 ### Параметры
 
-1. `<migration_name>`: 
+1. `<entity_name>`: 
    - Обязательный параметр
-   - Определяет имя миграции и соответствующей модели
-   - Пример: create_users, add_column_to_posts
+   - Определяет имя сущности с которой производится операция, соответвует названию таблицы
+   - Пример: users, products
 
-2. `[field:type:options ...]`:
+2. `<action>`:
+   - Обязательный параметр
+   - Определяет тип действия которое будет произведено над сущностью
+
+3. `[field:type:options ...]`:
    - Необязательный параметр (можно указать несколько)
    - Описывает поля таблицы
    - Формат: имя_поля:тип_поля:опция1:опция2:...
+
+### Действия
+- `create`: создание сущности
+- `add_fields`: добавление к сущности полей(в том числе связей)
+- `remove_fields`: удаление полей из сущности
+- `drop`: удаление сущности
 
 ### Типы полей
 
@@ -43,11 +53,17 @@
 
 ### Примеры вызова
 
-`./codegenex create_users name:string:i email:string:unique:i password:string`
+`./codegenex users create name:string:i email:string:unique:i password:string`
 
-`./codegenex create_posts title:string:i content:string user_id:int:ref:i published:bool:default=false views_count:int:default=0`
+`./codegenex posts create title:string:i content:string user_id:int:ref:i published:bool:default=false views_count:int:default=0`
 
-` ./codegenex create_orders status:enum[pending,processing,completed]:i total:float:i user_id:int:ref:i notes:string:null`
+` ./codegenex orders create status:enum[pending,processing,completed]:i total:float:i user_id:int:ref:i notes:string:null`
+
+`./codegenex users add_fields middle_name:string last_name:string:unique`
+
+`./codegenex users remove_fields middle_name:string`
+
+`./codegenex users drop`
 
 ## Примечания
 
