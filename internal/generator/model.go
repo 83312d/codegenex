@@ -122,6 +122,8 @@ func prepareModelData(modelName string, fields []types.Field) ModelData {
 			})
 		}
 
+		modelData.Fields = append(modelData.Fields, modelField)
+
 		if field.IsReference {
 			referencedModel := field.ReferencedModel
 			if referencedModel == "" {
@@ -132,8 +134,6 @@ func prepareModelData(modelName string, fields []types.Field) ModelData {
 				FieldName: strcase.ToCamel(strings.TrimSuffix(field.Name, "_id")),
 			})
 		}
-
-		modelData.Fields = append(modelData.Fields, modelField)
 	}
 
 	if needsTimeImport {
