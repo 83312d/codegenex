@@ -7,8 +7,10 @@ import (
 )
 
 type Config struct {
-	ModelDir     string `json:"model_dir"`
-	MigrationDir string `json:"migration_dir"`
+	ModelDir      string `json:"model_dir"`
+	MigrationDir  string `json:"migration_dir"`
+	RepositoryDir string `json:"repository_dir"`
+	PackageName   string `json:"package_name"`
 }
 
 var (
@@ -31,6 +33,12 @@ func GetConfig() *Config {
 		}
 		if config.MigrationDir == "" {
 			config.MigrationDir = "_gen/migrations"
+		}
+		if config.RepositoryDir == "" {
+			config.RepositoryDir = "_gen/repositories"
+		}
+		if config.PackageName == "" {
+			config.PackageName = "myapp"
 		}
 	})
 	return config

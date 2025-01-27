@@ -1,4 +1,6 @@
 {
-  "model_dir": "",
-  "migration_dir": ""
+  "model_dir": "_gen/models",
+  "migration_dir": "_gen/migrations",
+  "repository_dir": "_gen/repositories",
+  "package_name": "defapp"
 }

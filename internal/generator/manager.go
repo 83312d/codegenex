@@ -40,6 +40,11 @@ func (m *Manager) handleCreateAction(entityName string, fields []types.Field) er
 		return err
 	}
 
+	err = GenerateRepository(entityName, fields, types.CreateAction)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -50,6 +55,11 @@ func (m *Manager) handleAddFieldsAction(entityName string, fields []types.Field)
 	}
 
 	err = m.GenerateAndSaveModel(entityName, fields, types.AddFieldsAction)
+	if err != nil {
+		return err
+	}
+
+	err = GenerateRepository(entityName, fields, types.AddFieldsAction)
 	if err != nil {
 		return err
 	}
@@ -68,6 +78,11 @@ func (m *Manager) handleRemoveFieldsAction(entityName string, fields []types.Fie
 		return err
 	}
 
+	err = GenerateRepository(entityName, fields, types.RemoveFieldsAction)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -78,6 +93,11 @@ func (m *Manager) handleDropAction(entityName string) error {
 	}
 
 	err = m.RemoveModel(entityName)
+	if err != nil {
+		return err
+	}
+
+	err = GenerateRepository(entityName, nil, types.DropAction)
 	if err != nil {
 		return err
 	}

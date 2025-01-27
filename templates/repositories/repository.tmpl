@@ -1,0 +1,156 @@
+package repository
+
+import (
+    "context"
+    "fmt"
+
+    "{{.PackageName}}/internal/database"
+    "{{.PackageName}}/model"
+)
+
+type {{.Name}}Repository interface {
+    Create(ctx context.Context, {{.VarName}} *model.{{.Name}}) error
+    GetByID(ctx context.Context, id int64) (*model.{{.Name}}, error)
+    Update(ctx context.Context, {{.VarName}} *model.{{.Name}}) error
+    Delete(ctx context.Context, id int64) error
+    List(ctx context.Context) *{{.Name}}Query
+    {{- range .Fields}}
+    {{- if .IsReference}}
+    GetBy{{trimSuffix .Name "_id" | title}}(ctx context.Context, {{trimSuffix .Name "_id"}}ID int64) ([]*model.{{$.Name}}, error)
+    {{- end}}
+    {{- end}}
+    {{- range .HasManyRelations}}
+    Get{{.FieldName}}(ctx context.Context, {{$.VarName}}ID int64) ([]*model.{{.ModelName}}, error)
+    {{- end}}
+}
+
+type {{.VarName}}Repository struct {
+    db database.DB
+}
+
+func New{{.Name}}Repository(db database.DB) {{.Name}}Repository {
+    return &{{.VarName}}Repository{db: db}
+}
+
+func (r *{{.VarName}}Repository) Create(ctx context.Context, {{.VarName}} *model.{{.Name}}) error {
+    query := "INSERT INTO {{.TableName}} ({{.ColumnNames}}) VALUES ({{.Placeholders}}) RETURNING id"
+    return r.db.QueryRowContext(ctx, query, {{.InsertValues}}).Scan(&{{.VarName}}.ID)
+}
+
+func (r *{{.VarName}}Repository) GetByID(ctx context.Context, id int64) (*model.{{.Name}}, error) {
+    query := "SELECT {{.ColumnNames}} FROM {{.TableName}} WHERE id = $1"
+    var {{.VarName}} model.{{.Name}}
+    err := r.db.QueryRowContext(ctx, query, id).Scan({{.ScanValues}})
+    if err != nil {
+        return nil, err
+    }
+    return &{{.VarName}}, nil
+}
+
+func (r *{{.VarName}}Repository) Update(ctx context.Context, {{.VarName}} *model.{{.Name}}) error {
+    query := "UPDATE {{.TableName}} SET {{.UpdateSet}} WHERE id = ${{.UpdatePlaceholder}}"
+    _, err := r.db.ExecContext(ctx, query, {{.UpdateValues}})
+    return err
+}
+
+func (r *{{.VarName}}Repository) Delete(ctx context.Context, id int64) error {
+    query := "DELETE FROM {{.TableName}} WHERE id = $1"
+    _, err := r.db.ExecContext(ctx, query, id)
+    return err
+}
+
+func (r *{{.VarName}}Repository) List(ctx context.Context) *{{.Name}}Query {
+    return &{{.Name}}Query{
+        ctx: ctx,
+        db: r.db,
+        query: "SELECT {{.ColumnNames}} FROM {{.TableName}}",
+    }
+}
+
+{{- range .Fields}}
+{{- if .IsReference}}
+func (r *{{$.VarName}}Repository) GetBy{{trimSuffix .Name "_id" | title}}(ctx context.Context, {{trimSuffix .Name "_id"}}ID int64) ([]*model.{{$.Name}}, error) {
+    query := "SELECT {{$.ColumnNames}} FROM {{$.TableName}} WHERE {{.Name}} = $1"
+    rows, err := r.db.QueryContext(ctx, query, {{trimSuffix .Name "_id"}}ID)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var results []*model.{{$.Name}}
+    for rows.Next() {
+        var {{$.VarName}} model.{{$.Name}}
+        if err := rows.Scan({{$.ScanValues}}); err != nil {
+            return nil, err
+        }
+        results = append(results, &{{$.VarName}})
+    }
+    return results, nil
+}
+{{- end}}
+{{- end}}
+
+{{- range .HasManyRelations}}
+func (r *{{$.VarName}}Repository) Get{{.FieldName}}(ctx context.Context, {{$.VarName}}ID int64) ([]*model.{{.ModelName}}, error) {
+    query := "SELECT * FROM {{.TableName}} WHERE {{$.VarName}}_id = $1"
+    rows, err := r.db.QueryContext(ctx, query, {{$.VarName}}ID)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var results []*model.{{.ModelName}}
+    for rows.Next() {
+        var {{.VarName}} model.{{.ModelName}}
+        if err := rows.Scan({{.ScanValues}}); err != nil {
+            return nil, err
+        }
+        results = append(results, &{{.VarName}})
+    }
+    return results, nil
+}
+{{- end}}
+
+type {{.Name}}Query struct {
+    ctx context.Context
+    db database.DB
+    query string
+    args []interface{}
+    order string
+    limit int
+    offset int
+}
+
+func (q *{{.Name}}Query) Sort(field string, direction string) *{{.Name}}Query {
+    q.order = fmt.Sprintf(" ORDER BY %s %s", field, direction)
+    return q
+}
+
+func (q *{{.Name}}Query) Paginate(page, pageSize int) *{{.Name}}Query {
+    q.limit = pageSize
+    q.offset = (page - 1) * pageSize
+    return q
+}
+
+func (q *{{.Name}}Query) Execute() ([]*model.{{.Name}}, error) {
+    finalQuery := q.query + q.order
+    if q.limit > 0 {
+        finalQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", q.limit, q.offset)
+    }
+
+    rows, err := q.db.QueryContext(q.ctx, finalQuery, q.args...)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var results []*model.{{.Name}}
+    for rows.Next() {
+        var {{.VarName}} model.{{.Name}}
+        if err := rows.Scan({{$.ScanValues}}); err != nil {
+            return nil, err
+        }
+        results = append(results, &{{.VarName}})
+    }
+    return results, nil
+}
