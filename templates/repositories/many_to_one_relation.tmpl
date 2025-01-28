@@ -1,0 +1,12 @@
+func (r *{{.CurrentModel | toLower}}Repository) Get{{.ReferencedModel}}(ctx context.Context, {{.CurrentModel | toLower}}ID int64) ({{.ReturnType}}, error) {
+    query := {{.Query}}
+    var {{.VarName}} model.{{.ReferencedModel}}
+    err := r.db.QueryRowContext(ctx, query, {{.CurrentModel | toLower}}ID).Scan({{.ScanFields}})
+    if err != nil {
+        if err == sql.ErrNoRows {
+            return nil, nil
+        }
+        return nil, err
+    }
+    return &{{.VarName}}, nil
+}

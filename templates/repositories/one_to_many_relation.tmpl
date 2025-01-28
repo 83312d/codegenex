@@ -1,0 +1,23 @@
+func (r *{{.ReferencedModel | toLower}}Repository) Get{{.CurrentModel | pluralize}}(ctx context.Context, {{.ReferencedModel | toLower}}ID int64) ({{.ReturnType}}, error) {
+    query := `{{.Query}}`
+    rows, err := r.db.QueryContext(ctx, query, {{.ReferencedModel | toLower}}ID)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var results {{.ReturnType}}
+    for rows.Next() {
+        var {{.VarName}} model.{{.CurrentModel}}
+        if err := rows.Scan({{.ScanFields}}); err != nil {
+            return nil, err
+        }
+        results = append(results, &{{.VarName}})
+    }
+
+    if err := rows.Err(); err != nil {
+        return nil, err
+    }
+
+    return results, nil
+}

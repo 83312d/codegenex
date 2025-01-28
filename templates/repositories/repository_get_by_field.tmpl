@@ -1,0 +1,9 @@
+func (r *{{.ModelName}}Repository) {{.MethodName}}(ctx context.Context, {{.FieldNameLower}}ID int64) (*model.{{.ModelName}}, error) {
+    query := "SELECT * FROM {{.TableName}} WHERE {{.FieldName}} = $1"
+    var result model.{{.ModelName}}
+    err := r.db.QueryRowContext(ctx, query, {{.FieldNameLower}}ID).Scan(/* TODO: add scan values */)
+    if err != nil {
+        return nil, err
+    }
+    return &result, nil
+}

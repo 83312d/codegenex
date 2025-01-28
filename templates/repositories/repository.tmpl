@@ -19,8 +19,8 @@ type {{.Name}}Repository interface {
     GetBy{{trimSuffix .Name "_id" | title}}(ctx context.Context, {{trimSuffix .Name "_id"}}ID int64) ([]*model.{{$.Name}}, error)
     {{- end}}
     {{- end}}
-    {{- range .HasManyRelations}}
-    Get{{.FieldName}}(ctx context.Context, {{$.VarName}}ID int64) ([]*model.{{.ModelName}}, error)
+    {{- range .Relations}}
+    Get{{.FieldName}}(ctx context.Context, {{$.VarName}}ID int64) ({{if .IsOneToMany}}[]*{{else}}*{{end}}model.{{.ModelName}}, error)
     {{- end}}
 }
 
@@ -69,6 +69,7 @@ func (r *{{.VarName}}Repository) List(ctx context.Context) *{{.Name}}Query {
 
 {{- range .Fields}}
 {{- if .IsReference}}
+
 func (r *{{$.VarName}}Repository) GetBy{{trimSuffix .Name "_id" | title}}(ctx context.Context, {{trimSuffix .Name "_id"}}ID int64) ([]*model.{{$.Name}}, error) {
     query := "SELECT {{$.ColumnNames}} FROM {{$.TableName}} WHERE {{.Name}} = $1"
     rows, err := r.db.QueryContext(ctx, query, {{trimSuffix .Name "_id"}}ID)
@@ -90,9 +91,15 @@ func (r *{{$.VarName}}Repository) GetBy{{trimSuffix .Name "_id" | title}}(ctx co
 {{- end}}
 {{- end}}
 
-{{- range .HasManyRelations}}
-func (r *{{$.VarName}}Repository) Get{{.FieldName}}(ctx context.Context, {{$.VarName}}ID int64) ([]*model.{{.ModelName}}, error) {
-    query := "SELECT * FROM {{.TableName}} WHERE {{$.VarName}}_id = $1"
+{{- range .Relations}}
+
+func (r *{{$.VarName}}Repository) Get{{.FieldName}}(ctx context.Context, {{$.VarName}}ID int64) ({{if .IsOneToMany}}[]*{{else}}*{{end}}model.{{.ModelName}}, error) {
+    {{if .IsOneToMany}}
+    query := "SELECT {{.ColumnNames}} FROM {{.TableName}} WHERE {{$.VarName}}_id = $1"
+    {{else}}
+    query := "SELECT {{.ColumnNames}} FROM {{.TableName}} WHERE id = (SELECT {{.VarName}}_id FROM {{$.TableName}} WHERE id = $1)"
+    {{end}}
+    {{if .IsOneToMany}}
     rows, err := r.db.QueryContext(ctx, query, {{$.VarName}}ID)
     if err != nil {
         return nil, err
@@ -108,6 +115,17 @@ func (r *{{$.VarName}}Repository) Get{{.FieldName}}(ctx context.Context, {{$.Var
         results = append(results, &{{.VarName}})
     }
     return results, nil
+    {{else}}
+    var {{.VarName}} model.{{.ModelName}}
+    err := r.db.QueryRowContext(ctx, query, {{$.VarName}}ID).Scan({{.ScanValues}})
+    if err != nil {
+        if err == sql.ErrNoRows {
+            return nil, nil
+        }
+        return nil, err
+    }
+    return &{{.VarName}}, nil
+    {{end}}
 }
 {{- end}}
 
